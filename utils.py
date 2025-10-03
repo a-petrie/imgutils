@@ -1,8 +1,10 @@
 from PIL import Image, ImageDraw
-import numpy as np
 from copy import deepcopy
+from cv2 import filter2D
 from scipy.ndimage import rotate as scipy_rotate
+import numpy as np
 
+FRAME_RATE = 60
 
 def show(image_array: np.ndarray) -> None:
     Image.fromarray(image_array).show()
@@ -151,4 +153,104 @@ def rotate(img: np.ndarray, theta: int) -> np.ndarray:
     return scipy_rotate(img, -theta, reshape=False)
 
 
+def rescale(img: np.ndarray, new_x: int, new_y: int) -> np.ndarray:
+    img = Image.fromarray(img).resize((new_x,new_y), resample=Image.BOX)
+    return image_to_numpy(img)
 
+def sharpen(img: np.ndarray) -> np.ndarray:
+    kernel = np.array([[0, -1, 0],
+                       [-1, 5,-1],
+                       [0, -1, 0]])
+    return filter2D(img, -1, kernel)
+
+
+def outline(img: np.ndarray) -> np.ndarray:
+    kernel = np.array([[-1, -1, -1],
+                       [-1, 8,-1],
+                       [-1, -1, -1]])
+    return filter2D(img, -1, kernel)
+
+
+def blur(img: np.ndarray) -> np.ndarray:
+    kernel = np.array([[0.0625, 0.125, 0.0625],
+                       [0.125, 0.25, 0.125],
+                       [0.0625, 0.125, 0.0625]])
+    return filter2D(img, -1, kernel)
+
+
+def white(w: int = 1000, h: int = 1000) -> np.ndarray:
+    channel = np.ones(shape=[w, h]) * 255
+    return rint(np.dstack([channel, channel, channel]))
+
+
+def c_channel_wave_scale(A=1, f=1, phase=0, duration=5, framerate=30):
+    n_samples = duration*framerate
+    X = np.linspace(0, duration, n_samples)
+    return (0.5 * A * np.sin(f * X - 0.25 * np.pi) + 1).reshape(n_samples, 1, 1)
+
+
+def colour_flow(img, duration=5, framerate=30):
+    red = rint(img[:,:,0] * c_channel_wave_scale(A=0.2, duration=duration, framerate=framerate))
+    green = rint(img[:,:,1] * c_channel_wave_scale(A=0.5, phase=0.5*np.pi, duration=duration, framerate=framerate))
+    blue = rint(img[:,:,2] * c_channel_wave_scale(A=0.8, phase=1.5*np.pi, duration=duration, framerate=framerate))
+    return np.stack([red, green, blue], axis=3)
+
+
+def clipadd(img1: np.ndarray, img2: np.ndarray) -> np.ndarray:
+    img1 = img1.astype(np.uint64)
+    img2 = img2.astype(np.uint64)
+    result = img1 + img2
+    clipping = result > 255
+    result[clipping] = 255 * np.tanh(result[clipping])
+    return rint(result)
+
+
+def clipprod(img1: np.ndarray, img2: np.ndarray) -> np.ndarray:
+    img1 = img1.astype(np.uint64)
+    img2 = img2.astype(np.uint64)
+    result = img1 * img2
+    clipping = result > 255
+    result[clipping] = (255 * np.tanh(result[clipping])).astype(np.uint8)
+    return rint(result)
+
+def mandala(img) -> np.ndarray:
+    upper_right = img
+    lower_right = x_flip(upper_right)
+    upper_left = y_flip(upper_right)
+    lower_left = x_flip(upper_left)
+    mandala = rint(0.25 * upper_right + 0.25 * lower_right + 0.25 * upper_left + 0.25 * lower_left)
+    mandala = rint(0.5 * mandala + 0.5 * rotate(mandala, 90))
+    return mandala
+
+def channel_stack(channel):
+    return np.stack([channel, channel, channel], axis=2)
+
+def greyscale(img) -> np.ndarray:
+    mean = rint(np.mean(img, axis=2))
+    return np.stack([mean, mean, mean], axis=2)
+
+
+def flatten_dark(img: np.ndarray, threshold: int = 50):
+    img[img < threshold] = 0
+
+
+def red(img: np.ndarray) -> np.ndarray:
+    red = img[:,:,0]
+    others = np.zeros(img.shape[:-1])
+    return np.stack([red, others, others])
+
+
+def blue(img: np.ndarray) -> np.ndarray:
+    blue = img[:,:,1]
+    others = np.zeros(img.shape[:-1])
+    return np.stack([others, blue, others])
+
+
+def green(img: np.ndarray) -> np.ndarray:
+    green = img[:,:,2]
+    others = np.zeros(img.shape[:-1])
+    return np.stack([others, others, green])
+
+
+def rbg_split(img: np.ndarray) -> np.ndarray:
+    return red(img), green(img), blue(img)
